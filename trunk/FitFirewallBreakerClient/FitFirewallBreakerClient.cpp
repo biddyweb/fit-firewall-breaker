@@ -8,8 +8,84 @@
 #include <assert.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <map>
 
 #include "FitFirewallBreakerCommon.h"
+
+using namespace std;
+
+typedef void (*on_receive)(void *p_map, int fd, void *argument);
+typedef map <int, pair <on_receive, void *> > mymap;
+
+void forward(mymap *p_map, int fd1, int *p_fd2)
+{
+	const int buf_size = 2048;
+	char buf[2048];
+	int r;
+	r = recv(fd1, buf, buf_size, 0);
+	if(r!=0)
+	{
+		assert(r!=-1);
+		int data_size = r;
+		r = send(*p_fd2, buf, data_size, 0);
+		if(r!=0)
+		{
+			assert(r==data_size);
+			return;
+		}
+	}
+	// close and clear
+	close(fd1);
+	close(*p_fd2);
+	int *p_fd1 = (int *)(*p_map)[*p_fd2].second;
+	assert(*p_fd1==fd1);
+	p_map->erase(fd1);
+	p_map->erase(*p_fd2);
+	delete p_fd1;
+	delete p_fd2;
+	printf("data connection lost.\n");
+}
+
+void accept_tcp_data(mymap *p_map, int tcp_data, int *p_tcp_incoming)
+{
+	p_map->erase(tcp_data);
+	int tcp_incoming = *p_tcp_incoming;
+	delete p_tcp_incoming;
+	
+	// tcp_data accept
+	struct sockaddr_in proxy_addr;
+	socklen_t addr_len = sizeof(proxy_addr);
+	int new_connection = accept(tcp_data, (struct sockaddr *)&proxy_addr, &addr_len);
+	assert(new_connection!=-1);
+	printf("data connection established.\n");
+	
+	(*p_map)[new_connection] = make_pair((on_receive)forward, new int(tcp_incoming));
+	(*p_map)[tcp_incoming] = make_pair((on_receive)forward, new int(new_connection));
+}
+
+void accept_local_listen(mymap *p_map, int tcp_local_listen, pair<int, int> *p_pair)
+{
+	int tcp_control = p_pair->first;
+	int tcp_data = p_pair->second;
+	
+	// tcp_local_listen accept
+	struct sockaddr_in local_addr;
+	socklen_t addr_len = sizeof(local_addr);
+	int r;
+	r = accept(tcp_local_listen, (struct sockaddr *)&local_addr, &addr_len);
+	assert(r!=-1);
+	int tcp_incoming = r;
+	printf("accept from %s:%d\n", inet_ntoa(local_addr.sin_addr), ntohs(local_addr.sin_port));
+	
+	// tcp_control send
+	struct tcp_request_packet trp;
+	trp.magic = MAGIC;
+	printf("tcp_control send.\n");
+	r = send(tcp_control, &trp, sizeof(trp), 0);
+	assert(r==sizeof(trp));
+	
+	(*p_map)[tcp_data] = make_pair((on_receive)accept_tcp_data, new int(tcp_incoming));
+}
 
 void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 {
@@ -78,36 +154,36 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 	r = listen(tcp_local_listen, 5);
 	assert(r!=-1);
 	
-	while(1)
+	mymap recv_map;
+	recv_map[tcp_local_listen] = make_pair((on_receive)accept_local_listen, new pair<int, int>(tcp_control, tcp_data));
+	while(!recv_map.empty())
 	{
-		// tcp_local_listen accept
-		printf("waiting for local connection\n");
-		addr_len = sizeof(local_addr);
-		r = accept(tcp_local_listen, (struct sockaddr *)&local_addr, &addr_len);
+		fd_set fds;
+		FD_ZERO(&fds);
+		mymap::iterator i;
+		int max_fd = 0;
+		for(i=recv_map.begin(); i!=recv_map.end(); i++)
+		{
+			int fd = i->first;
+			FD_SET(fd, &fds);
+			if(fd > max_fd)
+				max_fd = fd;
+		}
+		int r = select(max_fd+1, &fds, NULL, NULL, NULL);
 		assert(r!=-1);
-		int tcp_incoming = r;
-		printf("accept from %s:%d\n", inet_ntoa(local_addr.sin_addr), ntohs(local_addr.sin_port));
-		
-		// tcp_control send
-		struct tcp_request_packet trp;
-		trp.magic = MAGIC;
-		printf("tcp_control send.\n");
-		r = send(tcp_control, &trp, sizeof(trp), 0);
-		assert(r==sizeof(trp));
-		
-		// tcp_data accept
-		printf("waiting for establishing data connection.\n"); 
-		addr_len = sizeof(proxy_addr);
-		int new_connection = accept(tcp_data, (struct sockaddr *)&proxy_addr, &addr_len);
-		assert(new_connection!=-1);
-		printf("data connection established.\n");
-		
-		exchange(tcp_incoming, new_connection);
-		
-		close(tcp_incoming);
-		close(new_connection);
-		printf("data connection lost.\n");
+		for(i=recv_map.begin(); i!=recv_map.end(); i++)
+		{
+			int fd = i->first;
+			if(FD_ISSET(fd, &fds))
+			{
+				on_receive orcv = i->second.first;
+				void *argument = i->second.second;
+				orcv(&recv_map, fd, argument);
+				break;
+			}
+		}
 	}
+	assert(0);
 }
 
 int main(int argc, char *argv[])
