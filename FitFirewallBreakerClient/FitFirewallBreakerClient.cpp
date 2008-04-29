@@ -42,6 +42,18 @@ void forward(mymap *p_map, int fd1, int *p_fd2)
 				throw runtime_error("send()");
 			return;
 		}
+		else
+		{
+			printf("error on send()\n");
+		}
+	}
+	else if(r==0)
+	{
+		printf("closed by peer.\n");
+	}
+	else
+	{
+		printf("errno = %s\n", strerror(errno));
 	}
 	// close and clear
 	close(fd1);
@@ -106,13 +118,23 @@ void accept_local_listen(mymap *p_map, int tcp_local_listen, pair<int, int> *p_p
 
 void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 {
-	// prepare tcp_control
 	struct sockaddr_in proxy_addr, local_addr, http_addr;
+	int r;
+
+	// bind local listen port
+	int tcp_local_listen = socket(PF_INET, SOCK_STREAM, 0);
+	local_addr.sin_family = PF_INET;
+	local_addr.sin_port = local_port;
+	local_addr.sin_addr.s_addr = INADDR_ANY;
+	r = bind(tcp_local_listen, (struct sockaddr *)&local_addr, sizeof(local_addr));
+	if(r==-1)
+		throw runtime_error("bind()");
+
+	// prepare tcp_control
 	socklen_t addr_len = sizeof(local_addr);
 	int tcp_control = socket(PF_INET, SOCK_STREAM, 0);
 	if(tcp_control==-1)
 		throw runtime_error("socket()");
-	int r;
 #ifdef WIN32
 	local_addr.sin_family = PF_INET;
 	local_addr.sin_port = 0;
@@ -205,13 +227,6 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 	printf("control connection established.\n");
 	
 	// tcp_local_listen listen
-	int tcp_local_listen = socket(PF_INET, SOCK_STREAM, 0);
-	local_addr.sin_family = PF_INET;
-	local_addr.sin_port = local_port;
-	local_addr.sin_addr.s_addr = INADDR_ANY;
-	r = bind(tcp_local_listen, (struct sockaddr *)&local_addr, sizeof(local_addr));
-	if(r==-1)
-		throw runtime_error("bind()");
 	r = listen(tcp_local_listen, 5);
 	if(r==-1)
 		throw runtime_error("listen()");
