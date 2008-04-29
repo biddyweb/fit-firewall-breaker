@@ -124,6 +124,7 @@ void control(struct http_request_packet hrp)
 		{
 			close(tcp);
 			port_forward(hrp.src_ip, hrp.src_data_port, hrp.to_ip, hrp.to_port);
+			printf("child terminated.");
 			return;
 		}
 	}
@@ -142,6 +143,7 @@ int main()
 			if(fork()==0)
 			{
 				control(hrp);
+				printf("child %d terminated.\n", getpid());
 				return 0;
 			}
 		}
