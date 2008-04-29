@@ -80,8 +80,10 @@ void port_forward(uint32_t ip1, uint16_t port1, uint32_t ip2, uint16_t port2)
 	struct sockaddr_in addr1, addr2;
 	int fd1 = socket(PF_INET, SOCK_STREAM, 0);
 	int fd2 = socket(PF_INET, SOCK_STREAM, 0);
-	assert(fd1!=-1);
-	assert(fd2!=-1);
+	if(fd1==-1)
+		throw runtime_error("socket()");
+	if(fd2==-1)
+		throw runtime_error("socket()");
 	addr1.sin_family = PF_INET;
 	addr2.sin_family = PF_INET;
 	addr1.sin_port = port1;
@@ -90,9 +92,11 @@ void port_forward(uint32_t ip1, uint16_t port1, uint32_t ip2, uint16_t port2)
 	addr2.sin_addr.s_addr = ip2;
 	int r;
 	r = connect(fd1, (struct sockaddr *)&addr1, sizeof(addr1));
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("connect()");
 	r = connect(fd2, (struct sockaddr *)&addr2, sizeof(addr2));
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("connect()");
 	exchange(fd1, fd2);
 	close(fd1);
 	close(fd2);
@@ -103,14 +107,16 @@ void control(struct http_request_packet hrp)
 {
 	printf("request feched. tcp connect to %s:%d.\n", ip_ntoa(hrp.src_ip), hrp.src_control_port);
 	int tcp = socket(PF_INET, SOCK_STREAM, 0);
-	assert(tcp!=-1);
+	if(tcp==-1)
+		throw runtime_error("socket()");
 	struct sockaddr_in remote_addr;
 	remote_addr.sin_family = PF_INET;
 	remote_addr.sin_port = hrp.src_control_port;
 	remote_addr.sin_addr.s_addr = hrp.src_ip;
 	int r;
 	r = connect(tcp, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("connect()");
 	while(1)
 	{
 		printf("waiting for new connection\n");
@@ -118,8 +124,10 @@ void control(struct http_request_packet hrp)
 		r = recv(tcp, &trp, sizeof(trp), 0);
 		if(r==0)
 			break;
-		assert(r==sizeof(trp));
-		assert(trp.magic == MAGIC);
+		if(r!=sizeof(trp))
+			throw runtime_error("recv()");
+		if(trp.magic != MAGIC)
+			throw runtime_error("magic error");
 		if(fork()==0)
 		{
 			close(tcp);
