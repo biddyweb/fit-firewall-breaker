@@ -158,7 +158,7 @@ int main()
 		catch (runtime_error &e)
 		{
 			printf("exception: %s\n", e.what());
-			sleep(1);
+			sleep(10);
 		}
 	}
 	return 0;	
