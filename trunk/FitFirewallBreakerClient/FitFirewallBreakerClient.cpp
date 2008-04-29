@@ -179,12 +179,28 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 	printf("%s\n", recv_data); 
 	
 	// tcp_control accept
-	printf("waiting for establishing control connection.\n");
+	printf("waiting for establishing control connection...\n");
+	int i;
+	for(i=0; ; i++)
+	{
+		printf("%d sec...\n", i);
+		fd_set fds;
+		FD_ZERO(&fds);
+		FD_SET(tcp_control, &fds);
+		struct timeval tv;
+		tv.tv_sec = 1;
+		tv.tv_usec = 0;
+		int r = select(tcp_control+1, &fds, NULL, NULL, &tv);
+		if(r==1)
+			break;
+		if(r==-1)
+			throw runtime_error("select()");
+	}
 	addr_len = sizeof(proxy_addr);
 	r = accept(tcp_control, (struct sockaddr *)&proxy_addr, &addr_len);
+	close(tcp_control);
 	if(r==-1)
 		throw runtime_error("accept()");
-	close(tcp_control);
 	tcp_control = r;
 	printf("control connection established.\n");
 	
