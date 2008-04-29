@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <string.h>
-#include <assert.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <assert.h>
+#include <stdexcept>
 #include <map>
 
 #ifdef WIN32
@@ -37,7 +38,8 @@ void forward(mymap *p_map, int fd1, int *p_fd2)
 		r = send(*p_fd2, buf, data_size, 0);
 		if(r>0)
 		{
-			assert(r==data_size);
+			if(r!=data_size)
+				throw runtime_error("send()");
 			return;
 		}
 	}
@@ -97,8 +99,8 @@ void accept_local_listen(mymap *p_map, int tcp_local_listen, pair<int, int> *p_p
 	trp.magic = MAGIC;
 	printf("tcp_control send.\n");
 	r = send(tcp_control, &trp, sizeof(trp), 0);
-	assert(r==sizeof(trp));
-	
+	if(r!=sizeof(trp))
+		throw runtime_error("send()");
 	(*p_map)[tcp_data] = make_pair((on_receive)accept_tcp_data, new int(tcp_incoming));
 }
 
@@ -108,47 +110,57 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 	struct sockaddr_in proxy_addr, local_addr, http_addr;
 	socklen_t addr_len = sizeof(local_addr);
 	int tcp_control = socket(PF_INET, SOCK_STREAM, 0);
-	assert(tcp_control!=-1);
+	if(tcp_control==-1)
+		throw runtime_error("socket()");
 	int r;
 #ifdef WIN32
 	local_addr.sin_family = PF_INET;
 	local_addr.sin_port = 0;
 	local_addr.sin_addr.s_addr = INADDR_ANY;
 	r = bind(tcp_control, (struct sockaddr *)&local_addr, sizeof(local_addr));
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("bind()");
 #endif
 	r = listen(tcp_control, 1);
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("listen()");
 	r = getsockname(tcp_control, (struct sockaddr *)&local_addr, &addr_len);
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("getsockname()");
 	uint16_t src_control_port = local_addr.sin_port;
 	
 	// prepare tcp_data
 	int tcp_data = socket(PF_INET, SOCK_STREAM, 0);
-	assert(tcp_data!=-1);
+	if(tcp_data==-1)
+		throw runtime_error("socket()");
 #ifdef WIN32
 	local_addr.sin_family = PF_INET;
 	local_addr.sin_port = 0;
 	local_addr.sin_addr.s_addr = INADDR_ANY;
 	r = bind(tcp_data, (struct sockaddr *)&local_addr, sizeof(local_addr));
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("bind()");
 #endif
 	r = listen(tcp_data, 1);
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("listen()");
 	addr_len = sizeof(local_addr);
 	r = getsockname(tcp_data, (struct sockaddr *)&local_addr, &addr_len);
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("getsockname()");
 	uint16_t src_data_port = local_addr.sin_port;
 
 	// send http request
 	printf("send http request: src_control_port is %d, to %s:%d.\n", ntohs(src_control_port), ip_ntoa(to_ip), ntohs(to_port));
 	int http = socket(PF_INET, SOCK_STREAM, 0);
-	assert(http!=-1);
+	if(http==-1)
+		throw runtime_error("socket()");
 	http_addr.sin_family = PF_INET;
 	http_addr.sin_port = htons(80);
 	http_addr.sin_addr = *((struct in_addr *)gethostbyname(HTTP_SERVER)->h_addr_list[0]);
 	r = connect(http, (struct sockaddr *)&http_addr, sizeof(http_addr));
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("connect()");
 	char send_data[1024];
 	snprintf(send_data, 1024, 
 		"GET %s?SourceControlPort=%d&SourceDataPort=%d&ToIp=%s&ToPort=%d HTTP/1.0\r\n"
@@ -156,10 +168,12 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 		"\r\n",
 		SUBMIT_PHP, src_control_port, src_data_port, ip_ntoa(to_ip), to_port, HTTP_SERVER);
 	r = send(http, send_data, strlen(send_data), 0);
-	assert(r==(int)strlen(send_data));
+	if(r!=(int)strlen(send_data))
+		throw runtime_error("send()");
 	char recv_data[1024];
 	r = recv(http, recv_data, 1024, 0);
-	assert(r>=0);
+	if(r==-1)
+		throw runtime_error("recv()");
 	close(http);
 	recv_data[r] = 0;
 	printf("%s\n", recv_data); 
@@ -168,7 +182,8 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 	printf("waiting for establishing control connection.\n");
 	addr_len = sizeof(proxy_addr);
 	r = accept(tcp_control, (struct sockaddr *)&proxy_addr, &addr_len);
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("accept()");
 	close(tcp_control);
 	tcp_control = r;
 	printf("control connection established.\n");
@@ -179,9 +194,11 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 	local_addr.sin_port = local_port;
 	local_addr.sin_addr.s_addr = INADDR_ANY;
 	r = bind(tcp_local_listen, (struct sockaddr *)&local_addr, sizeof(local_addr));
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("bind()");
 	r = listen(tcp_local_listen, 5);
-	assert(r!=-1);
+	if(r==-1)
+		throw runtime_error("listen()");
 	
 	mymap recv_map;
 	recv_map[tcp_local_listen] = make_pair((on_receive)accept_local_listen, new pair<int, int>(tcp_control, tcp_data));
@@ -199,7 +216,8 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 				max_fd = fd;
 		}
 		int r = select(max_fd+1, &fds, NULL, NULL, NULL);
-		assert(r!=-1 || errno==EINTR);
+		if(r==-1 && errno!=EINTR)
+			throw runtime_error("select()");
 		for(i=recv_map.begin(); i!=recv_map.end(); i++)
 		{
 			int fd = i->first;
@@ -235,7 +253,6 @@ int main(int argc, char *argv[])
 	}
 	uint16_t local_port = htons(atoi(argv[1]));
 	struct hostent *hostinfo = gethostbyname(argv[2]);
-	assert(hostinfo);
 	uint32_t to_ip = ((struct in_addr *)hostinfo->h_addr_list[0])->s_addr;
 	uint16_t to_port = htons(atoi(argv[3]));
 	printf("local port is %d, connect to %s:%d.\n", ntohs(local_port), ip_ntoa(to_ip), ntohs(to_port));

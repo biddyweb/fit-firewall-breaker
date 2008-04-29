@@ -1,6 +1,9 @@
 #include <assert.h>
 #include <stdio.h>
+#include <stdexcept>
 #include "FitFirewallBreakerCommon.h"
+
+using std::runtime_error;
 
 char *ip_ntoa(uint32_t ip)
 {
@@ -23,7 +26,8 @@ void exchange(int fd1, int fd2)
 		FD_SET(fd[1], &fds);
 		int nfds = ((fd[0]>fd[1])?fd[0]:fd[1])+1;
 		int r = select(nfds, &fds, NULL, NULL, NULL);
-		assert(r!=-1);
+		if(r==-1)
+			throw runtime_error("select()");
 		int i;
 		for(i=0; i<2; i++)
 		{
