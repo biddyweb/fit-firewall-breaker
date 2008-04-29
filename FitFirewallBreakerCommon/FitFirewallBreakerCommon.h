@@ -1,16 +1,25 @@
 #ifndef FITFIREWALLBREAKERCOMMON_H_
 #define FITFIREWALLBREAKERCOMMON_H_
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#ifdef WIN32
+	#include <Winsock2.h>
+	#include <windows.h>
+	#define close closesocket
+	#define snprintf _snprintf_s
+	#define send(s, buf, len, flags) send(s, (const char *)(buf), len, flags)
+	typedef unsigned int uint32_t;
+	typedef unsigned short uint16_t;
+	typedef int socklen_t;
+#else
+	#include <sys/socket.h>
+	#include <netinet/in.h>
+	#include <arpa/inet.h>
+#endif
 
-//#define PROXY_SERVER (inet_addr("166.111.142.69"))
-//#define PROXY_UDP_PORT (htons(5300))
 #define MAGIC (htonl(0x12345678))
-#define HTTP_SERVER "59.66.130.153"
+#define HTTP_SERVER "wcgbg.net9.org"
 #define QUERY_PHP "/ffb/query.php"
-#define SUBMIT_PHP "/ffb/test.php"
+#define SUBMIT_PHP "/ffb/submit.php"
 
 struct http_request_packet {
 	uint32_t src_ip;

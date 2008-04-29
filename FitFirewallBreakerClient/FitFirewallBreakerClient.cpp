@@ -1,14 +1,22 @@
 #include <stdio.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
 #include <string.h>
-#include <arpa/inet.h>
 #include <assert.h>
-#include <unistd.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <map>
+
+#ifdef WIN32
+	#include <Winsock2.h>
+	#include <windows.h>
+	#pragma comment(lib, "Ws2_32.lib")
+#else
+	#include <netdb.h>
+	#include <netinet/in.h>
+	#include <unistd.h>
+	#include <sys/types.h>
+	#include <sys/socket.h>
+	#include <arpa/inet.h>
+#endif
 
 #include "FitFirewallBreakerCommon.h"
 
@@ -23,12 +31,11 @@ void forward(mymap *p_map, int fd1, int *p_fd2)
 	char buf[2048];
 	int r;
 	r = recv(fd1, buf, buf_size, 0);
-	if(r!=0)
+	if(r>0)
 	{
-		assert(r!=-1);
 		int data_size = r;
 		r = send(*p_fd2, buf, data_size, 0);
-		if(r!=0)
+		if(r>0)
 		{
 			assert(r==data_size);
 			return;
@@ -56,7 +63,11 @@ void accept_tcp_data(mymap *p_map, int tcp_data, int *p_tcp_incoming)
 	struct sockaddr_in proxy_addr;
 	socklen_t addr_len = sizeof(proxy_addr);
 	int new_connection = accept(tcp_data, (struct sockaddr *)&proxy_addr, &addr_len);
-	assert(new_connection!=-1);
+	if(new_connection==-1)
+	{
+		printf("could not establish the data connection.\n");
+		return;
+	}
 	printf("data connection established.\n");
 	
 	(*p_map)[new_connection] = make_pair((on_receive)forward, new int(tcp_incoming));
@@ -73,7 +84,11 @@ void accept_local_listen(mymap *p_map, int tcp_local_listen, pair<int, int> *p_p
 	socklen_t addr_len = sizeof(local_addr);
 	int r;
 	r = accept(tcp_local_listen, (struct sockaddr *)&local_addr, &addr_len);
-	assert(r!=-1);
+	if(r==-1)
+	{
+		printf("could not establish the incoming connection.\n");
+		return;
+	}
 	int tcp_incoming = r;
 	printf("accept from %s:%d\n", inet_ntoa(local_addr.sin_addr), ntohs(local_addr.sin_port));
 	
@@ -95,6 +110,13 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 	int tcp_control = socket(PF_INET, SOCK_STREAM, 0);
 	assert(tcp_control!=-1);
 	int r;
+#ifdef WIN32
+	local_addr.sin_family = PF_INET;
+	local_addr.sin_port = 0;
+	local_addr.sin_addr.s_addr = INADDR_ANY;
+	r = bind(tcp_control, (struct sockaddr *)&local_addr, sizeof(local_addr));
+	assert(r!=-1);
+#endif
 	r = listen(tcp_control, 1);
 	assert(r!=-1);
 	r = getsockname(tcp_control, (struct sockaddr *)&local_addr, &addr_len);
@@ -104,6 +126,13 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 	// prepare tcp_data
 	int tcp_data = socket(PF_INET, SOCK_STREAM, 0);
 	assert(tcp_data!=-1);
+#ifdef WIN32
+	local_addr.sin_family = PF_INET;
+	local_addr.sin_port = 0;
+	local_addr.sin_addr.s_addr = INADDR_ANY;
+	r = bind(tcp_data, (struct sockaddr *)&local_addr, sizeof(local_addr));
+	assert(r!=-1);
+#endif
 	r = listen(tcp_data, 1);
 	assert(r!=-1);
 	addr_len = sizeof(local_addr);
@@ -170,7 +199,7 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 				max_fd = fd;
 		}
 		int r = select(max_fd+1, &fds, NULL, NULL, NULL);
-		assert(r!=-1);
+		assert(r!=-1 || errno==EINTR);
 		for(i=recv_map.begin(); i!=recv_map.end(); i++)
 		{
 			int fd = i->first;
@@ -183,12 +212,27 @@ void go(uint16_t local_port, uint32_t to_ip, uint16_t to_port)
 			}
 		}
 	}
-	assert(0);
+	printf("no event to wait.\n");
 }
 
 int main(int argc, char *argv[])
 {
-	assert(argc == 4);
+#ifdef WIN32
+	WSADATA wsd;
+	WSAStartup(0x0202, &wsd);
+#endif
+	if(argc != 4)
+	{
+		printf("Usage: %s local_port host_address host_port\n\n", argv[0]);
+		printf(
+			"It works by allocating a socket to listen to local_port on the local side. "
+			"Whenever a connection is made to this port, "
+			"the connection is forwarded over a channel, "
+			"and a connection is made to host port host_port. "
+			"\n\n"
+			);
+		return 0;
+	}
 	uint16_t local_port = htons(atoi(argv[1]));
 	struct hostent *hostinfo = gethostbyname(argv[2]);
 	assert(hostinfo);
@@ -196,5 +240,8 @@ int main(int argc, char *argv[])
 	uint16_t to_port = htons(atoi(argv[3]));
 	printf("local port is %d, connect to %s:%d.\n", ntohs(local_port), ip_ntoa(to_ip), ntohs(to_port));
 	go(local_port, to_ip, to_port);
+#ifdef WIN32
+	WSACleanup();
+#endif
 	return 0;
 }

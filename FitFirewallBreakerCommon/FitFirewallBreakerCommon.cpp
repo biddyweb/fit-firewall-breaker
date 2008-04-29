@@ -14,7 +14,7 @@ void exchange(int fd1, int fd2)
 	const int buf_size = 2048;
 	char buf[2048];
 	int fd[2] = {fd1, fd2};
-	char arraw[2][3] = {"=>", "<="};
+	//char arraw[2][3] = {"=>", "<="};
 	while(1)
 	{
 		fd_set fds;
@@ -30,15 +30,13 @@ void exchange(int fd1, int fd2)
 			if(FD_ISSET(fd[i], &fds))
 			{
 				r = recv(fd[i], buf, buf_size, 0);
-				if(r==0)
-					return; // half-close problem
-				assert(r!=-1);
+				if(r<=0)
+					return;
 				int data_size = r;
 				r = send(fd[1-i], buf, data_size, 0);
-				if(r==0)
-					return; // half-close problem
-				assert(r==data_size);
-				printf("%s %d bytes.\n", arraw[i], data_size);
+				if(r!=data_size)
+					return;
+				//printf("%s %d bytes.\n", arraw[i], data_size);
 			}
 		}
 	}

@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -8,41 +9,56 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdexcept>
+
+using std::runtime_error;
 
 #include "FitFirewallBreakerCommon.h"
 
-int fetch_request(struct http_request_packet *hrp)
+void fetch_request(struct http_request_packet *hrp)
 {
 	int http = socket(PF_INET, SOCK_STREAM, 0);
-	assert(http!=-1);
+	if(http==-1)
+		throw runtime_error("socket()");
 	struct sockaddr_in remote_addr;
 	remote_addr.sin_family = PF_INET;
 	remote_addr.sin_port = htons(80);
 	remote_addr.sin_addr = *((struct in_addr *)gethostbyname(HTTP_SERVER)->h_addr_list[0]);
 	int r;
 	r = connect(http, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
-	assert(r!=-1);
+	if(r==-1)
+	{
+		close(http);
+		throw runtime_error("connect()");
+	}
 	char send_data[] = 
 		"GET " QUERY_PHP " HTTP/1.0\r\n"
 		"Host: " HTTP_SERVER "\r\n"
 		"\r\n";
 	r = send(http, send_data, strlen(send_data), 0);
-	assert(r==(int)strlen(send_data));
+	if(r != (int)strlen(send_data))
+	{
+		close(http);
+		throw runtime_error("send()");
+	}
 	char recv_data[1024];
 	r = recv(http, recv_data, 1024, 0);
-	assert(r>=0);
 	close(http);
+	if(r<=0)
+		throw runtime_error("recv()");
 	recv_data[r] = 0;
 	char *content = strstr(recv_data, "\r\n\r\n");
-	assert(content);
+	if(content==NULL)
+		throw runtime_error("wrong response");
 	content += 4; // for "\r\n\r\n"
 	if(content[0] == 'E')
-		return -1;
+		throw runtime_error("empty");
 	int i;
 	for(i=0; i<5; i++)
 	{
 		char *p = strchr(content, ' ');
-		assert(p);
+		if(p==NULL)
+			throw runtime_error("wrong response");
 		*p = 0;
 		if(i==0)
 			hrp->src_ip = inet_addr(content);
@@ -56,7 +72,6 @@ int fetch_request(struct http_request_packet *hrp)
 			hrp->to_port = atoi(content);
 		content = p+1;
 	}
-	return 0;
 }
 
 void port_forward(uint32_t ip1, uint16_t port1, uint32_t ip2, uint16_t port2)
@@ -117,21 +132,24 @@ void control(struct http_request_packet hrp)
 
 int main()
 {
+	signal(SIGCHLD, SIG_IGN);  	
 	while(1)
 	{
-		printf("fetch_request\n");
-		struct http_request_packet hrp;
-		int r = fetch_request(&hrp);
-		if(r==0)
+		try
 		{
+			struct http_request_packet hrp;
+			fetch_request(&hrp);
 			if(fork()==0)
 			{
 				control(hrp);
 				return 0;
 			}
 		}
-		else
+		catch (runtime_error &e)
+		{
+			printf("exception: %s\n", e.what());
 			sleep(1);
+		}
 	}
 	return 0;	
 }
