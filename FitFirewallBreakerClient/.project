@@ -3,6 +3,7 @@
 	<name>FitFirewallBreakerClient</name>
 	<comment></comment>
 	<projects>
+		<project>FitFirewallBreakerCommon</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>
