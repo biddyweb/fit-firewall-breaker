@@ -20,10 +20,13 @@ void fetch_request(struct http_request_packet *hrp)
 	int http = socket(PF_INET, SOCK_STREAM, 0);
 	if(http==-1)
 		throw runtime_error("socket()");
+	struct hostent *hostinfo = gethostbyname(HTTP_SERVER);
+	if(hostinfo==NULL)
+		throw runtime_error("gethostbyname");
 	struct sockaddr_in remote_addr;
 	remote_addr.sin_family = PF_INET;
 	remote_addr.sin_port = htons(80);
-	remote_addr.sin_addr = *((struct in_addr *)gethostbyname(HTTP_SERVER)->h_addr_list[0]);
+	remote_addr.sin_addr = *((struct in_addr *)hostinfo->h_addr_list[0]);
 	int r;
 	r = connect(http, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
 	if(r==-1)
