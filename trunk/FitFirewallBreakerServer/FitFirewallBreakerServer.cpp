@@ -50,6 +50,15 @@ void fetch_request(struct http_request_packet *hrp)
 	if(r<=0)
 		throw runtime_error("recv()");
 	recv_data[r] = 0;
+	// check if the response code is 200
+	char *rc = strchr(recv_data, ' ');
+	if (rc==NULL)
+		throw runtime_error("wrong response");
+	if (rc+4 >= recv_data+r)
+		throw runtime_error("wrong response");
+	if (rc[1]!='2' || rc[2]!='0' || rc[3]!='0' || rc[4]!=' ')
+		throw runtime_error("wrong response");
+	// get content
 	char *content = strstr(recv_data, "\r\n\r\n");
 	if(content==NULL)
 		throw runtime_error("wrong response");
@@ -157,6 +166,7 @@ int main()
 				printf("child %d terminated.\n", getpid());
 				return 0;
 			}
+			sleep(1);
 		}
 		catch (runtime_error &e)
 		{
