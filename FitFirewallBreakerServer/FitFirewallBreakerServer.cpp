@@ -162,8 +162,15 @@ int main()
 			fetch_request(&hrp);
 			if(fork()==0)
 			{
-				control(hrp);
-				printf("child %d terminated.\n", getpid());
+				try
+				{
+					control(hrp);
+					printf("child %d terminated.\n", getpid());
+				}
+				catch (runtime_error &e)
+				{
+					printf("exception: %s\n", e.what());
+				}
 				return 0;
 			}
 			sleep(1);
